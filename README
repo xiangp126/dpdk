@@ -9,3 +9,17 @@ API documentation, and sample application information.
 
 For questions and usage discussions, subscribe to: users@dpdk.org
 Report bugs and issues to the development mailing list: dev@dpdk.org
+
+## Quick start
+
+```bash
+http://www.dpdk.org/doc/quick-start
+
+make config T=x86_64-native-linuxapp-gcc
+sed -ri 's,(PMD_PCAP=).*,\1y,' build/.config
+
+make -j 40
+
+mkdir -p /mnt/huge
+mount -t hugetlbfs nodev /mnt/huge
+```
