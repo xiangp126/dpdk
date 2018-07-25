@@ -23,3 +23,10 @@ make -j 40
 mkdir -p /mnt/huge
 mount -t hugetlbfs nodev /mnt/huge
 ```
+
+## Debug
+```bash
+export EXTRA_CFLAGS="-O0 -g3"
+
+make -j
+```
