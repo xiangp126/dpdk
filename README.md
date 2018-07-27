@@ -24,6 +24,17 @@ mkdir -p /mnt/huge
 mount -t hugetlbfs nodev /mnt/huge
 ```
 
+## Build Example
+```
+cd 'dpdk main directory'
+
+export RTE_SDK=`pwd`
+export RTE_TARGET=build
+
+cd example
+make -j
+```
+
 ## Debug
 ```bash
 export EXTRA_CFLAGS="-O0 -g3"
