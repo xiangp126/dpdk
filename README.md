@@ -10,11 +10,26 @@ API documentation, and sample application information.
 For questions and usage discussions, subscribe to: users@dpdk.org
 Report bugs and issues to the development mailing list: dev@dpdk.org
 
-## Quick start
+## Prerequisite
+
+- CentOS
 
 ```bash
-http://www.dpdk.org/doc/quick-start
+yum update -y
+yum install numactl-devel libpcap-devel popt-devel kernel-devel -y
+```
 
+- Ubuntu
+
+```bash
+apt-get install libnuma-dev libpcap-dev -y
+```
+
+## Quick start
+
+<http://www.dpdk.org/doc/quick-start>
+
+```bash
 make config T=x86_64-native-linuxapp-gcc
 sed -ri 's,(PMD_PCAP=).*,\1y,' build/.config
 
@@ -24,14 +39,29 @@ mkdir -p /mnt/huge
 mount -t hugetlbfs nodev /mnt/huge
 ```
 
-## Build Example
-```
+## Build
+- Export Var
+
+```bash
 cd 'dpdk main directory'
 
 export RTE_SDK=`pwd`
 export RTE_TARGET=build
+```
+
+- Build Example
+
+```bash
+cd 'dpdk main directory'
 
 cd example
+make -j
+```
+
+- Build DPVS
+
+```bash
+cd 'dpvs main directory'
 make -j
 ```
 
