@@ -1,0 +1,48 @@
+diff --git a/src/config.mk b/src/config.mk
+index 119dbb6..e7de322 100644
+--- a/src/config.mk
++++ b/src/config.mk
+@@ -26,8 +26,8 @@ CFLAGS += -D DPVS_MAX_LCORE=64
+ 
+ #CFLAGS += -D CONFIG_DPVS_NEIGH_DEBUG
+ #CFLAGS += -D CONFIG_RECORD_BIG_LOOP
+-#CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
+-#CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
++CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
++CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
+ #CFLAGS += -D CONFIG_SYNPROXY_DEBUG
+ #CFLAGS += -D CONFIG_TIMER_MEASURE
+ #CFLAGS += -D DPVS_CFG_PARSER_DEBUG
+diff --git a/src/dpdk.mk b/src/dpdk.mk
+index a7f078c..0ffc2df 100644
+--- a/src/dpdk.mk
++++ b/src/dpdk.mk
+@@ -39,8 +39,9 @@ CFLAGS += -march=native \
+ LIBS += -L $(DPDKDIR)/lib
+ 
+ LIBS += -Wl,--no-as-needed -fvisibility=default \
+-        -Wl,--whole-archive -lrte_pmd_vmxnet3_uio -lrte_pmd_i40e -lrte_pmd_ixgbe \
+-		-lrte_pmd_e1000 -lrte_pmd_bnxt -lrte_pmd_ring -lrte_pmd_bond -lrte_ethdev -lrte_ip_frag \
++		-Wl,--whole-archive -lrte_pmd_mlx5 -libverbs -lmlx5 \
++		-lrte_pmd_vmxnet3_uio -lrte_pmd_ixgbe \
++		-lrte_pmd_bnxt -lrte_pmd_ring -lrte_pmd_bond -lrte_ethdev -lrte_ip_frag \
+ 		-Wl,--whole-archive -lrte_hash -lrte_kvargs -Wl,-lrte_mbuf -lrte_eal \
+ 		-Wl,-lrte_mempool -lrte_ring -lrte_cmdline -lrte_cfgfile -lrte_kni \
+ 		-lrte_mempool_ring -lrte_timer -lrte_net -Wl,-lrte_pmd_virtio \
+diff --git a/src/netif.c b/src/netif.c
+index de06d40..ce7ad60 100644
+--- a/src/netif.c
++++ b/src/netif.c
+@@ -3640,9 +3640,9 @@ inline static void netif_port_init(const struct rte_eth_conf *conf)
+     char *kni_name;
+ 
+     nports = rte_eth_dev_count();
+-    if (nports <= 0)
+-        rte_exit(EXIT_FAILURE, "No dpdk ports found!\n"
+-                "Possibly nic or driver is not dpdk-compatible.\n");
++    // if (nports <= 0)
++    //     rte_exit(EXIT_FAILURE, "No dpdk ports found!\n"
++    //             "Possibly nic or driver is not dpdk-compatible.\n");
+ 
+     nports_cfg = list_elems(&port_list) + list_elems(&bond_list);
+     if (nports_cfg < nports)
