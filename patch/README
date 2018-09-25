@@ -1,3 +1,5 @@
 [DPDK patch] rte_pmd_i40e.diff -> Transplant from DPDK 1805 for driving Intel 25G NIC Flow Director Function.
     git apply --check rte_pmd_i40e.diff
     git apply rte_pmd_i40e.diff
+
+[DPVS patch] [sa_pool.diff]  -> Intel 25G NIC fdir patch for dpvs

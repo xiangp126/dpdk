@@ -13,3 +13,4 @@ GRTAGS
 tags
 TAGS
 build/
+!*.diff

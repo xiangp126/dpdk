@@ -1,0 +1,144 @@
+diff --git a/include/dpdk.h b/include/dpdk.h
+index ff049b0..9782b32 100644
+--- a/include/dpdk.h
++++ b/include/dpdk.h
+@@ -55,6 +55,7 @@
+ #include <rte_kni.h>
+ #include <rte_ip_frag.h>
+ #include <rte_eth_bond.h>
++#include <rte_pmd_i40e.h>
+ #include "mbuf.h"
+ 
+ typedef uint8_t lcoreid_t;
+diff --git a/src/config.mk b/src/config.mk
+index a8f325b..c44f318 100644
+--- a/src/config.mk
++++ b/src/config.mk
+@@ -26,8 +26,8 @@ CFLAGS += -D DPVS_MAX_LCORE=64
+ 
+ #CFLAGS += -D CONFIG_DPVS_NEIGH_DEBUG
+ #CFLAGS += -D CONFIG_RECORD_BIG_LOOP
+-#CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
+-#CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
++CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
++CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
+ #CFLAGS += -D CONFIG_SYNPROXY_DEBUG
+ #CFLAGS += -D CONFIG_TIMER_MEASURE
+ #CFLAGS += -D DPVS_CFG_PARSER_DEBUG
+diff --git a/src/netif.c b/src/netif.c
+index b9d63bd..05868ea 100644
+--- a/src/netif.c
++++ b/src/netif.c
+@@ -2770,11 +2770,12 @@ static int dpdk_filter_supported(struct netif_port *dev, enum rte_filter_type fl
+ static int dpdk_set_fdir_filt(struct netif_port *dev, enum rte_filter_op op,
+                               const struct rte_eth_fdir_filter *filt)
+ {
+-    if (rte_eth_dev_filter_ctrl((uint8_t)dev->id, RTE_ETH_FILTER_FDIR,
++    if (rte_eth_dev_filter_ctrl(dev->id, RTE_ETH_FILTER_FDIR,
+                                 op, (void *)filt) < 0)
+         return EDPVS_DPDKAPIFAIL;
+ 
+     return EDPVS_OK;
++    /* return (ret == 0) ? EDPVS_OK : EDPVS_INVAL; */
+ }
+ 
+ static struct netif_ops dpdk_netif_ops = {
+diff --git a/src/sa_pool.c b/src/sa_pool.c
+index 8633c89..63b66fc 100644
+--- a/src/sa_pool.c
++++ b/src/sa_pool.c
+@@ -138,6 +138,36 @@ static uint64_t             sa_lcore_mask;
+ 
+ static uint8_t              sa_pool_hash_size   = SAPOOL_DEF_HASH_SZ;
+ 
++/*
++ * fdir mask must be set according to configured slave lcore number
++ */
++#if 1
++static int __fdir_dstport_mask_set(struct netif_port *port) {
++    uint8_t slave_nb;
++    int shift;
++
++    netif_get_slave_lcores(&slave_nb, NULL);
++    for (shift = 0; (0x1 << shift) < slave_nb; shift++);
++    if (shift >= 16) {
++        RTE_LOG(DEBUG, NETIF, "%s: %s's fdir dst_port_mask init failed.\n",
++                __func__, port->name);
++        return EDPVS_NOTSUPP;
++    }
++
++    struct rte_pmd_i40e_inset inset;
++    // I40E_FILTER_PCTYPE_NONF_IPV4_TCP = 33
++    rte_pmd_i40e_inset_get(port->id, 33, &inset, INSET_FDIR);
++    /* no comment on, field index for destport and mask[0] */
++    inset.mask[0].field_idx = 30;
++    inset.mask[0].mask = 0xFFFF << shift;
++    rte_pmd_i40e_inset_set(port->id, 33, &inset, INSET_FDIR);
++
++    RTE_LOG(INFO, NETIF, "%s:dst_port_mask = %0x, shift = %d\n", port->name,
++                inset.mask[0].mask, shift);
++    return EDPVS_OK;
++}
++#endif
++
+ static int __add_del_filter(struct netif_port *dev, lcoreid_t cid,
+                             __be32 dip, __be16 dport,
+                             uint32_t filter_id[MAX_FDIR_PROTO], bool add)
+@@ -164,7 +194,7 @@ static int __add_del_filter(struct netif_port *dev, lcoreid_t cid,
+     };
+     queueid_t queue;
+     int err;
+-    enum rte_filter_op op, rop;
++    enum rte_filter_op op;
+ #ifdef CONFIG_DPVS_SAPOOL_DEBUG
+     char ipaddr[64];
+ #endif
+@@ -194,12 +224,12 @@ static int __add_del_filter(struct netif_port *dev, lcoreid_t cid,
+     if (err != EDPVS_OK)
+         return err;
+ 
+-    err = netif_fdir_filter_set(dev, op, &filt[1]);
+-    if (err != EDPVS_OK) {
+-        rop = add ? RTE_ETH_FILTER_DELETE : RTE_ETH_FILTER_ADD;
+-        netif_fdir_filter_set(dev, rop, &filt[0]);
+-        return err;
+-    }
++    // err = netif_fdir_filter_set(dev, op, &filt[1]);
++    // if (err != EDPVS_OK) {
++    //     rop = add ? RTE_ETH_FILTER_DELETE : RTE_ETH_FILTER_ADD;
++    //     netif_fdir_filter_set(dev, rop, &filt[0]);
++    //     return err;
++    // }
+ 
+ #ifdef CONFIG_DPVS_SAPOOL_DEBUG
+     RTE_LOG(DEBUG, SAPOOL, "FDIR: %s %s TCP/UDP "
+@@ -319,6 +349,8 @@ int sa_pool_create(struct inet_ifaddr *ifa, uint16_t low, uint16_t high)
+         filtids[1] = fdir->soft_id++;
+         err = sa_add_filter(ifa->idev->dev, cid, ifa->addr.in.s_addr,
+                             fdir->port_base, filtids);
++        /* rte_eth_dev_filter_ctrl(ifa->idev->dev->id, RTE_ETH_FILTER_FDIR, */
++                    /* RTE_ETH_FILTER_SET, &info); */
+         if (err != EDPVS_OK) {
+             sa_pool_free_hash(ap);
+             rte_free(ap);
+@@ -330,6 +362,20 @@ int sa_pool_create(struct inet_ifaddr *ifa, uint16_t low, uint16_t high)
+         ifa->sa_pools[cid] = ap;
+     }
+ 
++    struct rte_eth_fdir_filter_info info;
++    memset(&info, 0, sizeof(info));
++    info.info_type = RTE_ETH_FDIR_FILTER_INPUT_SET_SELECT;
++    info.info.input_set_conf.flow_type = RTE_ETH_FLOW_NONFRAG_IPV4_TCP;
++    info.info.input_set_conf.field[0] = RTE_ETH_INPUT_SET_L4_TCP_DST_PORT;
++    info.info.input_set_conf.inset_size = 1;
++    info.info.input_set_conf.op = RTE_ETH_INPUT_SET_SELECT;
++    rte_eth_dev_filter_ctrl(ifa->idev->dev->id, RTE_ETH_FILTER_FDIR,
++                                           RTE_ETH_FILTER_SET, &info);
++    /* rte_eth_dev_filter_ctrl(dev->id, RTE_ETH_FILTER_FDIR, */
++                                           /* RTE_ETH_FILTER_SET, &info); */
++
++    __fdir_dstport_mask_set(ifa->idev->dev);
++
+ #ifdef CONFIG_DPVS_SAPOOL_DEBUG
+     RTE_LOG(DEBUG, SAPOOL, "%s: sa pool created\n", __func__);
+ #endif
