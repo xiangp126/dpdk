@@ -1,0 +1,461 @@
+commit 308f8e68ed95f78caadba60b752e8f2089e7ab62
+Author: Peng Xiang <hi.pxiang@gmail.com>
+Date:   Fri Jul 20 11:41:34 2018 +0800
+
+    proxy-protocol ipv4 init
+
+diff --git a/.gitignore b/.gitignore
+index b852113..1c8b830 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -7,6 +7,7 @@
+ *.so
+ *.vim
+ tags
++main
+ cscope*
+ filenametags
+ build/
+@@ -29,6 +30,8 @@ tools/keepalived/lib/config.h
+ src/dpvs
+ .cache.mk
+ .tmp_versions/
++.ycm_extra_conf.py
++.ycm_add_inc
+ Module.symvers
+ modules.order
+ *.ko
+diff --git a/include/proxy_protocol.h b/include/proxy_protocol.h
+new file mode 100644
+index 0000000..4eec77a
+--- /dev/null
++++ b/include/proxy_protocol.h
+@@ -0,0 +1,71 @@
++/*
++ * DPVS is a software load balancer (Virtual Server) based on DPDK.
++ *
++ * Copyright (C) 2017 iQIYI (www.iqiyi.com).
++ * All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include "common.h"
++#include "ipvs/conn.h"
++
++#ifndef __DPVS_PROXY_PROTOCOL_H__
++#define __DPVS_PROXY_PROTOCOL_H__
++
++typedef uint8_t  u_char;
++typedef uint16_t u_short;
++typedef struct dpvs_proxy_protocol_header_s    dpvs_proxy_protocol_header_t;
++typedef struct dpvs_proxy_protocol_inet_addr_s dpvs_proxy_protocol_inet_addr_t;
++typedef struct dpvs_proxy_protocol_inet6_addr_s
++                                              dpvs_proxy_protocol_inet6_addr_t;
++typedef struct dp_vs_conn dpvs_connection_t;
++
++/*
++ * dpvs_cpymem: support consecutive memory copy for 'dst'
++ * +--------+
++ * 0        |n
++ */
++#define dpvs_cpymem(dst, src, n)    (((char *)memcpy(dst, src, n)) + (n))
++
++#define DPVS_PROXY_PROTOCOL_AF_INET     1
++#define DPVS_PROXY_PROTOCOL_AF_INET6    2
++
++/*
++ * - worst case (optional fields set to 0xff) :
++ *     "PROXY UNKNOWN ffff:f...f:ffff ffff:f...f:ffff 65535 65535\r\n"
++ *   => 5 + 1 + 7 + 1 + 39 + 1 + 39 + 1 + 5 + 1 + 5 + 2 = 107 chars
++ *
++ *   not including trailing '\0' for string
++ */
++#define DPVS_PROXY_PROTOCOL_MAX_HEADER 107
++
++#define DPVS_INET_ADDRSTRLEN   (sizeof("255.255.255.255") - 1)
++#define DPVS_INET6_ADDRSTRLEN \
++    (sizeof("ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255") - 1)
++
++#define LF    (u_char)'\n'
++#define CR    (u_char)'\r'
++#define CRLF  "\r\n"
++
++/*
++ * dpvs_proxy_protocol_write - v1 write procedure for proxy protocol
++ * @conn: connection from client
++ * @buf:  points to start of the buffer
++ * @last: points to end of the buffer
++ * return buf if write success
++ */
++char *dpvs_proxy_protocol_write(dpvs_connection_t *conn,
++                                char *buf,
++                                char *last);
++
++#endif /* ifndef __DPVS_PROXY_PROTOCOL_H__ */
+diff --git a/src/Makefile b/src/Makefile
+index 57ca904..c3369e2 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -51,7 +51,7 @@ ifeq ($(shell test $(GCC_VERSION) -ge 70 && echo 1), 1)
+ endif
+ 
+ ifeq ($(DEBUG),)
+-	CFLAGS += -O3
++	CFLAGS += -g3
+ else
+ 	CFLAGS += -g -O0 -D DEBUG
+ endif
+diff --git a/src/ipvs/ip_vs_conn.c b/src/ipvs/ip_vs_conn.c
+index 9d21adc..00119fc 100644
+--- a/src/ipvs/ip_vs_conn.c
++++ b/src/ipvs/ip_vs_conn.c
+@@ -104,7 +104,7 @@ static inline int __conn_hash(struct dp_vs_conn *conn,
+         return EDPVS_EXIST;
+ 
+     if (conn->flags & DPVS_CONN_F_TEMPLATE) {
+-        /* lock is complusory for template */
++        /* lock is compulsory for template */
+         rte_spinlock_lock(&dp_vs_ct_lock);
+         list_add(&tuplehash_in(conn).list, &dp_vs_ct_tab[ihash]);
+         list_add(&tuplehash_out(conn).list, &dp_vs_ct_tab[ohash]);
+diff --git a/src/ipvs/ip_vs_proto_tcp.c b/src/ipvs/ip_vs_proto_tcp.c
+index 55ddeb4..09d83af 100644
+--- a/src/ipvs/ip_vs_proto_tcp.c
++++ b/src/ipvs/ip_vs_proto_tcp.c
+@@ -21,6 +21,7 @@
+ #include "dpdk.h"
+ #include "ipv4.h"
+ #include "neigh.h"
++#include "proxy_protocol.h"
+ #include "ipvs/ipvs.h"
+ #include "ipvs/proto.h"
+ #include "ipvs/proto_tcp.h"
+@@ -544,6 +545,121 @@ tcp_conn_lookup(struct dp_vs_proto *proto, const struct dp_vs_iphdr *iph,
+     return conn;
+ }
+ 
++/*
++ * payload_not_empty - check this packet's payload is not empty
++ * @mbuf: the pointer
++ * @return EDPVS_OK if true
++ */
++static inline int payload_not_empty(struct rte_mbuf *mbuf) {
++    struct tcphdr   *tcph = tcp_hdr(mbuf);
++    struct ipv4_hdr *iph  = ip4_hdr(mbuf);
++    uint8_t tcph_len = tcph->doff << 2;
++    uint8_t iph_len  = (iph->version_ihl & 0x0f) << 2;
++    if (mbuf->pkt_len > (tcph_len + iph_len)) {
++        return EDPVS_OK;
++    }
++    return EDPVS_INVAL;
++}
++
++/*
++ * payload_add_proxy_protocol - add proxy-protocol header
++ * @conn: the connection info structure
++ * @mbuf: mbuf pointer
++ * @tcph: points to the tcp header within @mbuf
++ * @buff_len: length of buffer
++ * @return EDPVS_OK
++ */
++static int payload_add_proxy_protocol(struct dp_vs_conn *conn,
++                                      struct rte_mbuf *mbuf,
++                                      struct tcphdr *tcph,
++                                      uint8_t *buff_len) {
++    /*
++     * As to suit for proxy-protocol read routine of Nginx
++     * the pp header should be send together with http header like this
++     *
++     * PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\n
++     * GET / HTTP/1.1\r\n
++     * Host: 192.168.0.11\r\n
++     * \r\n
++     *
++     * not be pp header alone
++     * PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\n
++     */
++    if (payload_not_empty(mbuf) != EDPVS_OK) {
++        RTE_LOG(INFO, IPVS, "mbuf->pkt_len = %d, packet empty\n", mbuf->pkt_len);
++        return EDPVS_OK;
++    }
++    uint32_t mtu;
++    uint8_t *p, *q, *tail;
++    struct route_entry *rt;
++
++    char buf[DPVS_PROXY_PROTOCOL_MAX_HEADER];
++    memset(buf, '\0', DPVS_PROXY_PROTOCOL_MAX_HEADER);
++
++    /* start point of buffer */
++    char *pos = buf;
++    char *last = dpvs_proxy_protocol_write(conn, buf, buf + DPVS_PROXY_PROTOCOL_MAX_HEADER);
++    /* buff_len same length as strlen(pos), not including trailing '\0' */
++    *buff_len = last - pos;
++    RTE_LOG(INFO, IPVS, "buff_len = %d, strlen(pos) = %zd\n", *buff_len, strlen(pos));
++    RTE_LOG(INFO, IPVS, "pos = %s", pos);
++
++    /*
++     * check if has enough room for proxy protocol header, whose length varies
++     */
++    if ((rt = mbuf->userdata) != NULL) {
++        mtu = rt->mtu;
++    } else if (conn->in_dev) { /* no route for fast-xmit */
++        mtu = conn->in_dev->mtu;
++    } else {
++        RTE_LOG(DEBUG, IPVS, "add proxy protocol header: MTU unknown.\n");
++        return EDPVS_NOROUTE;
++    }
++
++    if (unlikely(mbuf->pkt_len > (mtu - *buff_len))) {
++        RTE_LOG(DEBUG, IPVS, "add proxy protocol header: need fragment.\n");
++        return EDPVS_FRAG;
++    }
++
++    /*
++     * check tail room and expand mbuf
++     * have to pull all bits in segments for later operation.
++     */
++    if (mbuf_may_pull(mbuf, mbuf->pkt_len) != 0) {
++        return EDPVS_INVPKT;
++    }
++    /* 
++     * @tail: A pointer to the start of the newly appended data, or
++     * NULL if there is not enough tailroom space in the last segment
++     */
++    tail = (uint8_t *)rte_pktmbuf_append(mbuf, *buff_len);
++    if (unlikely(!tail)) {
++        RTE_LOG(DEBUG, IPVS, "add proxy protocol header: no mbuf tail room.\n");
++        return EDPVS_NOROOM;
++    }
++
++    /*
++     * shift data down, leaving data gap
++     * @p: is old position of last data byte
++     * @q: is new position of last data byte
++     */
++    p = tail - 1;
++    q = p + *buff_len;
++    while (p >= ((uint8_t *)tcph + sizeof(struct tcphdr))) {
++        *q = *p;
++        --p;
++        --q;
++    }
++    memmove(p + 1, pos, *buff_len);
++
++    RTE_LOG(DEBUG, IPVS, "Original ip total length: %d\n", ntohs(ip4_hdr(mbuf)->total_length));
++    ip4_hdr(mbuf)->total_length = htons(ntohs(ip4_hdr(mbuf)->total_length) + *buff_len);
++    RTE_LOG(DEBUG, IPVS, "Adjust ip total length to : %d\n", ntohs(ip4_hdr(mbuf)->total_length));
++
++    /* tcp csum will be recalc later. */
++    return EDPVS_OK;
++}
++
+ static int tcp_fnat_in_handler(struct dp_vs_proto *proto,
+                         struct dp_vs_conn *conn, struct rte_mbuf *mbuf)
+ {
+@@ -574,15 +690,38 @@ static int tcp_fnat_in_handler(struct dp_vs_proto *proto,
+     if (th->syn && !th->ack) {
+         tcp_in_remove_ts(th);
+         tcp_in_init_seq(conn, mbuf, th);
++#define PROXY_PROTOCOL
++#ifndef PROXY_PROTOCOL
+         tcp_in_add_toa(conn, mbuf, th);
++#endif
+     }
+ 
+-    /* add toa to first data packet */
++    bool skip_this_time = false;
++    /* add toa or proxy-protocol header to first data packet */
+     if (ntohl(th->ack_seq) == conn->fnat_seq.fdata_seq
+-            && !th->syn && !th->rst && !th->fin)
++                && !th->syn && !th->rst && !th->fin) {
++#ifdef PROXY_PROTOCOL
++        uint8_t buff_len = 0;
++        payload_add_proxy_protocol(conn, mbuf, th, &buff_len);
++        tcp_in_adjust_seq(conn, th);
++
++        /* then update delta value and set skip flag */
++        RTE_LOG(INFO, IPVS, "Before adjust conn->fnat_seq.delta = %d\n", conn->fnat_seq.delta);
++        /*
++         * according to tcp_in_init_seq & tcp_in_adjust_seq
++         * conn->fnat_seq.delta here should not be used within ntohl & htonl
++         */
++        conn->fnat_seq.delta += buff_len;
++        skip_this_time = true;
++        RTE_LOG(INFO, IPVS, "After adjust conn->fnat_seq.delta = %d\n", conn->fnat_seq.delta);
++#else
+         tcp_in_add_toa(conn, mbuf, th);
++#endif
++    }
+ 
+-    tcp_in_adjust_seq(conn, th);
++    if (!skip_this_time) {
++        tcp_in_adjust_seq(conn, th);
++    }
+ 
+     /* L4 translation */
+     th->source  = conn->lport;
+diff --git a/src/proxy_protocol.c b/src/proxy_protocol.c
+new file mode 100644
+index 0000000..63802eb
+--- /dev/null
++++ b/src/proxy_protocol.c
+@@ -0,0 +1,105 @@
++/*
++ * DPVS is a software load balancer (Virtual Server) based on DPDK.
++ *
++ * Copyright (C) 2017 iQIYI (www.iqiyi.com).
++ * All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include "proxy_protocol.h"
++
++struct dpvs_proxy_protocol_header_s {
++    u_char signature[12];
++    u_char version;
++    u_char protocol;
++    u_char len[2];
++};
++
++struct dpvs_proxy_protocol_inet_addr_s {
++    u_char src_addr[4];
++    u_char dst_addr[4];
++    u_char src_port[2];
++    u_char dst_port[2];
++};
++
++struct dpvs_proxy_protocol_inet6_addr_s {
++    u_char src_addr[16];
++    u_char dst_addr[16];
++    u_char src_port[2];
++    u_char dst_port[2];
++};
++
++/*
++ * dpvs_sock_ntop - convert from ip v4/v6 address to text format
++ * @af: address family
++ * @sockaddr: union socket address
++ * @buf: text to store converted result
++ * @len: number of bytes available in the buffer
++ * @return total converted length
++ */
++static size_t dpvs_sock_ntop(int af,
++                             union inet_addr *sockaddr,
++                             char  *buf,
++                             size_t len) {
++    u_char *ptr = (u_char *)sockaddr;
++    /* write text address into buf and calculate how many bytes wrote */
++    if (inet_ntop(af, ptr, buf, len) != NULL) {
++        return strlen(buf);
++    }
++    return 0;
++}
++
++/*
++ * dpvs_proxy_protocol_write - v1 write procedure for proxy protocol
++ * @conn: connection from client
++ * @buf:  points to start of the buffer
++ * @last: points to end of the buffer
++ * return buf if write success
++ */
++char *dpvs_proxy_protocol_write(dpvs_connection_t *conn,
++                                char *buf,
++                                char *last) {
++    uint16_t port, lport;
++    int af = conn->af;
++
++    if (last - buf < DPVS_PROXY_PROTOCOL_MAX_HEADER) {
++        return NULL;
++    }
++
++    /*
++     * structure for example:
++     * PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\n
++     */
++    switch (af) {
++        case AF_INET:
++            buf = dpvs_cpymem(buf, "PROXY TCP4 ", sizeof("PROXY TCP4 ") - 1);
++            break;
++
++        case AF_INET6:
++            buf = dpvs_cpymem(buf, "PROXY TCP6 ", sizeof("PROXY TCP6 ") - 1);
++            break;
++
++        default:
++            buf = dpvs_cpymem(buf, "PROXY UNKNOWN" CRLF,
++                         sizeof("PROXY UNKNOWN" CRLF) - 1);
++    }
++
++    buf += dpvs_sock_ntop(af, &conn->caddr, buf, last - buf);
++    *buf++ = ' ';
++    buf += dpvs_sock_ntop(af, &conn->laddr, buf, last - buf);
++
++    port  = conn->cport;
++    lport = conn->lport;
++
++    buf += snprintf(buf, last - buf, " %u %u" CRLF, port, lport);
++    return buf;
++}
+diff --git a/tools/dpip/Makefile b/tools/dpip/Makefile
+index b36369e..795efff 100644
+--- a/tools/dpip/Makefile
++++ b/tools/dpip/Makefile
+@@ -21,26 +21,29 @@
+ 
+ TARGET = build/dpip
+ 
++CC     = gcc
+ CFLAGS = -g -O0
+ CFLAGS += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
++DEFS   = -D DPVS_MAX_LCORE=64
++CFLAGS += $(DEFS)
+ 
+-CFLAGS += -I ../../include
+-CFLAGS += -I ../keepalived/keepalived/libipvs-2.6
+-
++INC = ../../include
++INC += -I ../keepalived/keepalived/libipvs-2.6
+ LIBS = -lnuma
+-DEFS = -D DPVS_MAX_LCORE=64
+ 
+-CFLAGS += $(DEFS)
++all: $(TARGET)
+ 
+-OBJS = dpip.o utils.o route.o addr.o neigh.o link.o vlan.o \
+-	   qsch.o cls.o tunnel.o ../../src/common.o \
+-	   ../keepalived/keepalived/libipvs-2.6/sockopt.o
++SOURCE := $(wildcard *.c)
++OBJS   := $(patsubst %.c, %.o, $(SOURCE)) \
++          ../../src/common.o \
++          ../keepalived/keepalived/libipvs-2.6/sockopt.o
+ 
+-all: $(TARGET)
++%.o: %.c
++	$(CC) $(CFLAGS) -I $(INC) -c $< -o $@
+ 
+ $(TARGET): $(OBJS)
+ 	-mkdir -p ./build/
+-	gcc $(CFLAGS) -o $@ $^ $(LIBS)
++	$(CC) -o $@ $^ $(LIBS)
+ 
+ clean:
+ 	rm -rf ./build/ *.o
