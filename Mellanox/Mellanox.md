@@ -70,7 +70,7 @@ Other Network devices
 - download and install
 
 > Download from <http://www.mellanox.com/page/products_dyn?product_family=26><br>
-> Install *MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64.tgz*<br>
+> Install *MLNX\_OFED\_LINUX-4.4-1.0.0.0-rhel7.4-x86_64.tgz*<br>
 > refer <http://doc.dpdk.org/guides/nics/mlx5.html?highlight=mlx5#quick-start-guide-on-ofed>
 
 ```bash
@@ -173,4 +173,7 @@ EAL: Error - exiting with code: 1
 Possibly nic or driver is not dpdk-compatible.
 ```
 
-> You should double check link library of `-lrte_pmd_mlx5 -libverbs -lmlx5` for DPVS
+you should
+
+1. double check link library of `-lrte_pmd_mlx5 -libverbs -lmlx5` for DPVS
+2. `ldconfig` again
