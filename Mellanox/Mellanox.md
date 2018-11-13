@@ -29,7 +29,7 @@ Mellanox NIC differs with Intel, it uses `Bifurcated Driver`
 ### Remove Unused NIC
 if you have 2 Mellanox NIC in you system ,and you plan to use only one of them, please remove the one not to use from Linux first
 
-    0000:5e:00.0 'MT27710 Family [ConnectX-4 Lx] 1015' if=enp94s0f0 drv=mlx5_core unused=
+    0000:5e:00.0 'MT27710 Family [ConnectX-4 Lx] 1015' if=enp94s0f0 drv=mlx5_core unused= *Active*
     0000:5e:00.1 'MT27710 Family [ConnectX-4 Lx] 1015' if=enp94s0f1 drv=mlx5_core unused= *Active*
 
 say the one will not use is 
@@ -38,7 +38,7 @@ say the one will not use is
 
 - shutdown the card
 
-```bash
+```
 # ifdown enp94s0f0
 ifconfig enp94s0f0 down
 ./usertools/dpdk-devbind.py -u 0000:5e:00.0
@@ -70,15 +70,15 @@ Other Network devices
 - download and install
 
 > Download from <http://www.mellanox.com/page/products_dyn?product_family=26><br>
-> Install *MLNX\_OFED\_LINUX-4.4-1.0.0.0-rhel7.4-x86_64.tgz*<br>
+> Install `MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64.tgz`<br>
 > refer <http://doc.dpdk.org/guides/nics/mlx5.html?highlight=mlx5#quick-start-guide-on-ofed>
 
-```bash
-./mlnxofedinstall --upstream-libs --dpdk
+```
+# tar -xv -f MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64.tgz
+# cd MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64
+# ./mlnxofedinstall --upstream-libs --dpdk
 
-......
-
-[MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64]# ibv_devinfo
+# ibv_devinfo
 ibv_devinfo
 hca_id: mlx5_1
         transport:                      InfiniBand (0)
@@ -101,16 +101,15 @@ hca_id: mlx5_1
 ```
 - modprobe & restart service
 
-```bash
-modprobe -a ib_uverbs mlx5_core mlx5_ib
-/etc/init.d/openibd restart
+```
+# modprobe -a ib_uverbs mlx5_core mlx5_ib
+# /etc/init.d/openibd restart
 ```
 
 <a id=dpdk></a>
 ### Compile DPDK
 > refer <http://doc.dpdk.org/guides/nics/mlx5.html?highlight=mlx5><br>
 > DPDK version： `17.11.2` LTS
-   
 
 ```bash
 make config T=x86_64-native-linuxapp-gcc
@@ -123,13 +122,14 @@ make -j
 
 echo 5120 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
 echo 5120 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
+
+insmod build/kmod/rte_kni.ko
 ```
 
 > Mellanox NIC **need not use./usertools/dpdk-devbind.py** to bind card<br>
-> Do not use igb_uio/uio etc.
+> Do not use `igb_uio.ko` but `rte_kni.ko` will be used.
 
 ~~insmod build/kmod/igb_uio.ko~~<br>
-~~insmod build/kmod/rte_kni.ko~~
 
 <a id=dpvs></a>
 ### Compile DPVS

@@ -1,3 +1,5 @@
+## DPDK
+### Illustrate
 DPDK is a set of libraries and drivers for fast packet processing.
 It supports many processor architectures and both FreeBSD and Linux.
 
@@ -10,22 +12,22 @@ API documentation, and sample application information.
 For questions and usage discussions, subscribe to: users@dpdk.org
 Report bugs and issues to the development mailing list: dev@dpdk.org
 
-## Prerequisite
+### Prerequisite
 
-- CentOS
+#### CentOS
 
 ```bash
 yum update -y
 yum install numactl-devel libpcap-devel popt-devel kernel-devel -y
 ```
 
-- Ubuntu
+#### Ubuntu
 
 ```bash
 apt-get install libnuma-dev libpcap-dev -y
 ```
 
-## Quick start
+### Quick start
 
 <http://www.dpdk.org/doc/quick-start>
 
@@ -39,35 +41,49 @@ mkdir -p /mnt/huge
 mount -t hugetlbfs nodev /mnt/huge
 ```
 
-## Build
-- Export Var
+### Build
+- export var
 
 ```bash
-cd 'dpdk main directory'
-
+# cd 'dpdk main directory'
 export RTE_SDK=`pwd`
-export RTE_TARGET=build
+# export RTE_TARGET=build
 ```
 
-- Build Example
+- build examples
 
 ```bash
-cd 'dpdk main directory'
-
+# cd 'dpdk main directory'
 cd example
 make -j
 ```
 
-- Build DPVS
+- build `dpvs`
 
 ```bash
-cd 'dpvs main directory'
+# cd 'dpvs main directory'
 make -j
 ```
 
-## Debug
-```bash
-export EXTRA_CFLAGS="-O0 -g3"
+### Debug
 
+_for `dpvs` **step into** `dpdk` functions_
+
+```bash
+# cd 'dpdk main directory'
+export EXTRA_CFLAGS="-O0 -g3"
 make -j
+```
+
+_jump into `dpvs` main directory_
+
+```bash
+make clean
+make -j
+```
+
+_then relaunch `cgdb`_
+
+```bash
+cgdb src/dpvs
 ```
