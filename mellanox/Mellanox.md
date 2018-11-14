@@ -19,11 +19,11 @@ uname -r
 cat /etc/redhat-release
 CentOS Linux release 7.4.1708 (Core)
 ```
-网卡型号 `MT27710 Family [ConnectX-4 Lx] 1015`
+网卡型号 `MT27710 Family [ConnectX-4 Lx] 1015` 25Gbps
 
 <a id=bifurcated></a>
 ### Bifurcated Driver
-`Mellanox` NIC differs with `Intel`, it uses `Bifurcated Driver`
+`Mellanox` card differs with `Intel`, it uses `Bifurcated Driver`
 <https://doc.dpdk.org/guides/linux_gsg/linux_drivers.html#bifurcated-driver>
 
 <a id=remove></a>
@@ -237,7 +237,7 @@ make -j
 
 <a id=debug></a>
 ### Hard Problem Fix
-#### no DPDK ports found
+#### no dpdk ports found
 > If launch dpvs followed with `No DPDK ports found`
 
 ```bash
@@ -249,7 +249,7 @@ Possibly nic or driver is not dpdk-compatible.
 - double check link library of `-lrte_pmd_mlx5 -libverbs -lmlx5` for dpvs
 - `ldconfig` again
 
-#### DPDK ports not match
+#### dpdk ports not match
 `DPDK` ports found by `DPVS` not matched with that configured in `dpvs.conf`
 
 refer [Adjust Card to be Used](#remove)
