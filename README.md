@@ -65,13 +65,14 @@ make -j
 make -j
 ```
 
-### Debug
+### Debug Help
 
 _for `dpvs` **step into** `dpdk` functions_
 
 ```bash
 # cd 'dpdk main directory'
 export EXTRA_CFLAGS="-O0 -g3"
+make clean
 make -j
 ```
 
