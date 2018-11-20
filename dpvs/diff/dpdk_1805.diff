@@ -1,0 +1,300 @@
+diff --git a/src/Makefile b/src/Makefile
+index 57ca904..f06b807 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -50,11 +50,7 @@ ifeq ($(shell test $(GCC_VERSION) -ge 70 && echo 1), 1)
+ 	CFLAGS += -Wstringop-overflow=0
+ endif
+ 
+-ifeq ($(DEBUG),)
+-	CFLAGS += -O3
+-else
+-	CFLAGS += -g -O0 -D DEBUG
+-endif
++CFLAGS += -g3
+ 
+ LIBS += -lpthread -lnuma
+ 
+diff --git a/src/config.mk b/src/config.mk
+index 119dbb6..e7de322 100644
+--- a/src/config.mk
++++ b/src/config.mk
+@@ -26,8 +26,8 @@ CFLAGS += -D DPVS_MAX_LCORE=64
+ 
+ #CFLAGS += -D CONFIG_DPVS_NEIGH_DEBUG
+ #CFLAGS += -D CONFIG_RECORD_BIG_LOOP
+-#CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
+-#CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
++CFLAGS += -D CONFIG_DPVS_SAPOOL_DEBUG
++CFLAGS += -D CONFIG_DPVS_IPVS_DEBUG
+ #CFLAGS += -D CONFIG_SYNPROXY_DEBUG
+ #CFLAGS += -D CONFIG_TIMER_MEASURE
+ #CFLAGS += -D DPVS_CFG_PARSER_DEBUG
+diff --git a/src/dpdk.mk b/src/dpdk.mk
+index 77e6d45..b8041f9 100644
+--- a/src/dpdk.mk
++++ b/src/dpdk.mk
+@@ -39,7 +39,8 @@ CFLAGS += -march=native \
+ LIBS += -L $(DPDKDIR)/lib
+ 
+ LIBS += -Wl,--no-as-needed -fvisibility=default \
+-        -Wl,--whole-archive -lrte_pmd_vmxnet3_uio -lrte_pmd_i40e -lrte_pmd_ixgbe \
++		-Wl,--whole-archive -lrte_pmd_vmxnet3_uio -lrte_pmd_i40e -lrte_pmd_ixgbe \
++		-lrte_pmd_mlx5 -libverbs -lmlx5 \
+ 		-lrte_pmd_e1000 -lrte_pmd_bnxt -lrte_pmd_ring -lrte_pmd_bond -lrte_ethdev -lrte_ip_frag \
+ 		-Wl,--whole-archive -lrte_hash -lrte_kvargs -Wl,-lrte_mbuf -lrte_eal \
+ 		-Wl,-lrte_mempool -lrte_ring -lrte_cmdline -lrte_cfgfile -lrte_kni \
+diff --git a/src/ipvs/ip_vs_conn.c b/src/ipvs/ip_vs_conn.c
+index 470899f..b0bef30 100644
+--- a/src/ipvs/ip_vs_conn.c
++++ b/src/ipvs/ip_vs_conn.c
+@@ -190,10 +190,10 @@ static inline int conn_unhash(struct dp_vs_conn *conn)
+ 
+ #ifdef CONFIG_DPVS_IPVS_DEBUG
+     if (unlikely(err == EDPVS_BUSY))
+-        RTE_LOG(DEBUG, IPVS, "%s: connection is busy: conn->refcnt = %d.\n",
++        RTE_LOG(ERR, IPVS, "%s: connection is busy: conn->refcnt = %d.\n",
+                 __func__, rte_atomic32_read(&conn->refcnt));
+     else if (unlikely(err == EDPVS_NOTEXIST))
+-        RTE_LOG(DEBUG, IPVS, "%s: connection not hashed.\n", __func__);
++        RTE_LOG(ERR, IPVS, "%s: connection not hashed.\n", __func__);
+ #endif
+ 
+     return err;
+@@ -285,7 +285,7 @@ static inline void conn_dump(const char *msg, struct dp_vs_conn *conn)
+     laddr = inet_ntop(conn->af, &conn->laddr, lbuf, sizeof(lbuf)) ? lbuf : "::";
+     daddr = inet_ntop(conn->af, &conn->daddr, dbuf, sizeof(dbuf)) ? dbuf : "::";
+ 
+-    RTE_LOG(DEBUG, IPVS, "%s [%d] %s %s:%u %s:%u %s:%u %s:%u refs %d\n",
++    RTE_LOG(ERR, IPVS, "%s [%d] %s %s:%u %s:%u %s:%u %s:%u refs %d\n",
+             msg ? msg : "", rte_lcore_id(), inet_proto_name(conn->proto),
+             caddr, ntohs(conn->cport), vaddr, ntohs(conn->vport),
+             laddr, ntohs(conn->lport), daddr, ntohs(conn->dport),
+@@ -301,7 +301,7 @@ static inline void conn_tuplehash_dump(const char *msg,
+     saddr = inet_ntop(t->af, &t->saddr, sbuf, sizeof(sbuf)) ? sbuf : "::";
+     daddr = inet_ntop(t->af, &t->daddr, dbuf, sizeof(dbuf)) ? dbuf : "::";
+ 
+-    RTE_LOG(DEBUG, IPVS, "%s%s %s %s:%u->%s:%u\n",
++    RTE_LOG(ERR, IPVS, "%s%s %s %s:%u->%s:%u\n",
+             msg ? msg : "",
+             t->direct == DPVS_CONN_DIR_INBOUND ? "in " : "out",
+             inet_proto_name(t->proto),
+@@ -313,7 +313,7 @@ static inline void conn_tab_dump(void)
+     int i;
+     struct conn_tuple_hash *tuphash;
+ 
+-    RTE_LOG(DEBUG, IPVS, "Conn Table [%d]\n", rte_lcore_id());
++    RTE_LOG(ERR, IPVS, "Conn Table [%d]\n", rte_lcore_id());
+ 
+ #ifdef CONFIG_DPVS_IPVS_CONN_LOCK
+     rte_spinlock_lock(&this_conn_lock);
+@@ -323,7 +323,7 @@ static inline void conn_tab_dump(void)
+         if (list_empty(&this_conn_tab[i]))
+             continue;
+ 
+-        RTE_LOG(DEBUG, IPVS, "    hash %d\n", i);
++        RTE_LOG(ERR, IPVS, "    hash %d\n", i);
+ 
+         list_for_each_entry(tuphash, &this_conn_tab[i], list) {
+             conn_tuplehash_dump("        ", tuphash);
+@@ -348,7 +348,7 @@ static inline void conn_stats_dump(const char *msg, struct dp_vs_conn *conn)
+         laddr = inet_ntop(conn->af, &conn->laddr, lbuf, sizeof(lbuf)) ? lbuf : "::";
+         daddr = inet_ntop(conn->af, &conn->daddr, dbuf, sizeof(dbuf)) ? dbuf : "::";
+ 
+-        RTE_LOG(DEBUG, IPVS, "[%s->%s]%s [%d] %s %s:%u %s:%u %s:%u %s:%u"
++        RTE_LOG(ERR, IPVS, "[%s->%s]%s [%d] %s %s:%u %s:%u %s:%u %s:%u"
+                 " inpkts=%ld, inbytes=%ld, outpkts=%ld, outbytes=%ld\n",
+                 cycles_to_stime(conn->ctime), sys_localtime_str(),
+                 msg ? msg : "", rte_lcore_id(), inet_proto_name(conn->proto),
+@@ -855,7 +855,7 @@ struct dp_vs_conn *dp_vs_conn_get(int af, uint16_t proto,
+ #endif
+ 
+ #ifdef CONFIG_DPVS_IPVS_DEBUG
+-    RTE_LOG(DEBUG, IPVS, "conn lookup: [%d] %s %s:%d -> %s:%d %s %s\n",
++    RTE_LOG(ERR, IPVS, "conn lookup: [%d] %s %s:%d -> %s:%d %s %s\n",
+             rte_lcore_id(), inet_proto_name(proto),
+             inet_ntop(af, saddr, sbuf, sizeof(sbuf)) ? sbuf : "::", ntohs(sport),
+             inet_ntop(af, daddr, dbuf, sizeof(dbuf)) ? dbuf : "::", ntohs(dport),
+@@ -898,7 +898,7 @@ struct dp_vs_conn *dp_vs_ct_in_get(int af, uint16_t proto,
+     rte_spinlock_unlock(&dp_vs_ct_lock);
+ 
+ #ifdef CONFIG_DPVS_IPVS_DEBUG
+-    RTE_LOG(DEBUG, IPVS, "conn-template lookup: [%d] %s %s:%d -> %s:%d %s\n",
++    RTE_LOG(ERR, IPVS, "conn-template lookup: [%d] %s %s:%d -> %s:%d %s\n",
+             rte_lcore_id(), inet_proto_name(proto),
+             inet_ntop(af, saddr, sbuf, sizeof(sbuf)) ? sbuf : "::", ntohs(sport),
+             inet_ntop(af, daddr, dbuf, sizeof(dbuf)) ? dbuf : "::", ntohs(dport),
+@@ -922,7 +922,7 @@ int dp_vs_check_template(struct dp_vs_conn *ct)
+             (conn_expire_quiescent_template &&
+              rte_atomic16_read(&dest->weight) == 0)) {
+ #ifdef CONFIG_DPVS_IPVS_DEBUG
+-        RTE_LOG(DEBUG, IPVS, "%s: check_template: dest not available for "
++        RTE_LOG(ERR, IPVS, "%s: check_template: dest not available for "
+                 "protocol %s s:%s:%u v:%s:%u -> l:%s:%u d:%s:%u\n",
+                 __func__, inet_proto_name(ct->proto),
+                 inet_ntop(ct->af, &ct->caddr, sbuf, sizeof(sbuf)) ? sbuf : "::",
+@@ -1200,7 +1200,7 @@ static int __lcore_conn_table_dump(const struct list_head *cplist)
+             }
+             sockopt_fill_conn_entry(conn, &cparr->array[cparr->tail++]);
+             if (cparr->tail >= MAX_CTRL_CONN_GET_ENTRIES) {
+-                RTE_LOG(DEBUG, IPVS, "%s: adding %d elems to conn_to_dump list -- "
++                RTE_LOG(ERR, IPVS, "%s: adding %d elems to conn_to_dump list -- "
+                         "%p:%d-%d\n", __func__, cparr->tail - cparr->head, cparr,
+                         cparr->head, cparr->tail);
+                 list_add_tail(&cparr->ca_list, &conn_to_dump);
+@@ -1208,7 +1208,7 @@ static int __lcore_conn_table_dump(const struct list_head *cplist)
+         }
+     }
+     if (cparr && cparr->tail < MAX_CTRL_CONN_GET_ENTRIES) {
+-        RTE_LOG(DEBUG, IPVS, "%s: adding %d elems to conn_to_dump list -- "
++        RTE_LOG(ERR, IPVS, "%s: adding %d elems to conn_to_dump list -- "
+                 "%p:%d-%d\n", __func__, cparr->tail - cparr->head, cparr,
+                 cparr->head, cparr->tail);
+         list_add_tail(&cparr->ca_list, &conn_to_dump);
+@@ -1226,7 +1226,7 @@ static int sockopt_conn_get_all(const struct ip_vs_conn_req *conn_req,
+ 
+ again:
+     list_for_each_entry_safe(larr, next_larr, &conn_to_dump, ca_list) {
+-        RTE_LOG(DEBUG, IPVS, "%s: printing conn_to_dump list(len=%d) --"
++        RTE_LOG(ERR, IPVS, "%s: printing conn_to_dump list(len=%d) --"
+                 "%p:%d-%d\n", __func__, list_elems(&conn_to_dump), larr,
+                 larr->head, larr->tail);
+         n = larr->tail - larr->head;
+diff --git a/src/kni.c b/src/kni.c
+index 56d84a4..fe922ad 100644
+--- a/src/kni.c
++++ b/src/kni.c
+@@ -50,6 +50,7 @@ static void kni_fill_conf(const struct netif_port *dev, const char *ifname,
+                           struct rte_kni_conf *conf)
+ {
+     struct rte_eth_dev_info info = {0};
++    struct rte_pci_device *pci_dev = NULL;
+ 
+     memset(conf, 0, sizeof(*conf));
+     conf->group_id = dev->id;
+@@ -57,8 +58,10 @@ static void kni_fill_conf(const struct netif_port *dev, const char *ifname,
+ 
+     if (dev->type == PORT_TYPE_GENERAL) { /* dpdk phy device */
+         rte_eth_dev_info_get(dev->id, &info);
+-        conf->addr = info.pci_dev->addr;
+-        conf->id = info.pci_dev->id;
++
++        pci_dev = RTE_DEV_TO_PCI(info.device);
++        conf->addr = pci_dev->addr;
++        conf->id   = pci_dev->id;
+     }
+ 
+     if (ifname && strlen(ifname))
+diff --git a/src/main.c b/src/main.c
+index fccde36..29a872f 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -237,7 +237,7 @@ int main(int argc, char *argv[])
+                  dpvs_strerror(err));
+ 
+     /* config and start all available dpdk ports */
+-    nports = rte_eth_dev_count();
++    nports = rte_eth_dev_count_avail();
+     for (pid = 0; pid < nports; pid++) {
+         dev = netif_port_get(pid);
+         if (!dev) {
+diff --git a/src/netif.c b/src/netif.c
+index 20ed57d..4c3c6b8 100644
+--- a/src/netif.c
++++ b/src/netif.c
+@@ -1391,7 +1391,7 @@ static int check_lcore_conf(int lcores, const struct netif_lcore_conf *lcore_con
+     queueid_t qid;
+     struct netif_lcore_conf mark;
+     memset(&mark, 0, sizeof(mark));
+-    nports = rte_eth_dev_count();
++    nports = rte_eth_dev_count_avail();
+     while (lcore_conf[i].nports > 0)
+     {
+         if (lcore2index[lcore_conf[i].id] != i) {
+@@ -2428,7 +2428,7 @@ static void lcore_job_xmit(void *args)
+     for (i = 0; i < lcore_conf[lcore2index[cid]].nports; i++) {
+         pid = lcore_conf[lcore2index[cid]].pqs[i].id;
+ #ifdef CONFIG_DPVS_NETIF_DEBUG
+-        if (unlikely(pid >= rte_eth_dev_count())) {
++        if (unlikely(pid >= rte_eth_dev_count_avail())) {
+             RTE_LOG(DEBUG, NETIF, "[%s] No enough NICs\n", __func__);
+             continue;
+         }
+@@ -2873,7 +2873,7 @@ static int dpdk_set_mc_list(struct netif_port *dev)
+     if (err != EDPVS_OK)
+         return err;
+ 
+-    return rte_eth_dev_set_mc_addr_list((uint8_t)dev->id, addrs, naddr);
++    return rte_eth_dev_set_mc_addr_list(dev->id, addrs, naddr);
+ }
+ 
+ static int dpdk_filter_supported(struct netif_port *dev, enum rte_filter_type fltype)
+@@ -3274,7 +3274,7 @@ static void fill_port_config(struct netif_port *port, char *promisc_on)
+         else if (!strcmp(cfg_stream->rss, "ip"))
+             port->dev_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
+         else if (!strcmp(cfg_stream->rss, "tcp"))
+-            port->dev_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_TCP;
++            port->dev_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IPV6;
+         else if (!strcmp(cfg_stream->rss, "udp"))
+             port->dev_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP;
+         else if (!strcmp(cfg_stream->rss, "sctp"))
+@@ -3835,7 +3835,7 @@ inline static void netif_port_init(const struct rte_eth_conf *conf)
+     struct rte_eth_conf this_eth_conf;
+     char *kni_name;
+ 
+-    nports = rte_eth_dev_count();
++    nports = rte_eth_dev_count_avail();
+     if (nports <= 0)
+         rte_exit(EXIT_FAILURE, "No dpdk ports found!\n"
+                 "Possibly nic or driver is not dpdk-compatible.\n");
+@@ -4057,7 +4057,7 @@ int netif_virtual_devices_add(void)
+     }
+ #endif
+ 
+-    phy_pid_end = rte_eth_dev_count();
++    phy_pid_end = rte_eth_dev_count_avail();
+ 
+     port_id_end = max(port_id_end, phy_pid_end);
+     /* set bond_pid_offset before create bonding device */
+@@ -4107,7 +4107,7 @@ int netif_virtual_devices_add(void)
+     }
+ 
+     if (!list_empty(&bond_list)) {
+-        bond_pid_end = rte_eth_dev_count();
++        bond_pid_end = rte_eth_dev_count_avail();
+ 
+         port_id_end = max(port_id_end, bond_pid_end);
+         RTE_LOG(INFO, NETIF, "bonding device port id range: [%d, %d)\n",
+@@ -4462,12 +4462,14 @@ static int get_port_basic(struct netif_port *port, void **out, size_t *out_len)
+ static inline void copy_dev_info(struct netif_nic_dev_get *get,
+         const struct rte_eth_dev_info *dev_info)
+ {
+-    if (dev_info->pci_dev)
++    struct rte_pci_device *pci_dev = RTE_DEV_TO_PCI(dev_info->device);
++
++    if (pci_dev)
+         snprintf(get->pci_addr, sizeof(get->pci_addr), "%04x:%02x:%02x:%0x",
+-                dev_info->pci_dev->addr.domain,
+-                dev_info->pci_dev->addr.bus,
+-                dev_info->pci_dev->addr.devid,
+-                dev_info->pci_dev->addr.function);
++                pci_dev->addr.domain,
++                pci_dev->addr.bus,
++                pci_dev->addr.devid,
++                pci_dev->addr.function);
+     if (dev_info->driver_name)
+         strncpy(get->driver_name, dev_info->driver_name, sizeof(get->driver_name));
+     get->if_index = dev_info->if_index;
+diff --git a/src/sa_pool.c b/src/sa_pool.c
+index b2b614e..d77222b 100644
+--- a/src/sa_pool.c
++++ b/src/sa_pool.c
+@@ -468,7 +468,7 @@ static inline int sa_pool_fetch(struct sa_entry_pool *pool,
+     rte_atomic16_dec(&pool->free_cnt);
+ 
+ #ifdef CONFIG_DPVS_SAPOOL_DEBUG
+-    RTE_LOG(DEBUG, SAPOOL, "%s: %s:%d fetched!\n", __func__,
++    RTE_LOG(ERR, SAPOOL, "%s: %s:%d fetched!\n", __func__,
+             inet_ntop(ss->ss_family, &ent->addr, addr, sizeof(addr)) ? : NULL,
+             ntohs(ent->port));
+ #endif
