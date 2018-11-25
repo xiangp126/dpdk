@@ -1,5 +1,4 @@
 ## Mellanox
-
 ### Contents
 - [Demo System Info](#system)
 - [Introduction for Bifurcated Driver](#bifurcated)
