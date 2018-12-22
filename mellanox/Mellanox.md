@@ -101,6 +101,12 @@ cd MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64
 ./mlnxofedinstall --upstream-libs --dpdk
 ```
 
+#### uninstall
+```bash
+cd MLNX_OFED_LINUX-4.4-1.0.0.0-rhel7.4-x86_64
+./uninstall.sh
+```
+
 #### check device status
 > make sure device **`status`** was **`PORT_ACTIVE (4)`**. if not, refer [Hrad Problem](#debug)
 
