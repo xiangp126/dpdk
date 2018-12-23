@@ -88,3 +88,11 @@ _then relaunch `cgdb`_
 ```bash
 cgdb src/dpvs
 ```
+
+### Uknown Symbols
+if insmod `build/kmod/igb_uio.ko` failed with unknown symbols, try first
+
+```bash
+modprobe igb
+modprobe uio
+```
