@@ -1,0 +1,13 @@
+[Unit]
+Description=DPVS controll tools, to ensure dpvs service startup safely and stably.
+After=syslog.target
+
+[Service]
+Type=simple
+RemainAfterExit=true
+ExecStart=/usr/bin/dpvs-ctrl start
+ExecReload=/usr/bin/dpvs-ctrl restart
+ExecStop=/usr/bin/dpvs-ctrl stop
+
+[Install]
+WantedBy=multi-user.target

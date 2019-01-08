@@ -1,0 +1,15 @@
+[Unit]
+Description=DPDK Virtual Server
+Wants=syslog.target
+After=syslog.target
+
+[Service]
+Type=simple
+PIDFile=/var/run/dpvs.pid
+KillMode=process
+EnvironmentFile=-/etc/dpvs_options.conf
+ExecStart=/usr/bin/dpvs $DPVS_OPTIONS
+ExecReload=/bin/killall -s HUP /usr/bin/dpvs
+
+[Install]
+WantedBy=multi-user.target keepalived.service

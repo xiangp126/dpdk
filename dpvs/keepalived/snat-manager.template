@@ -1,0 +1,34 @@
+#! /usr/bin/bash
+function snat_start() {
+    # add snat service here
+
+    # add vip here
+
+    systemctl start ospfd.service
+}
+
+function snat_stop() {
+    # del vip here
+
+    systemctl stop ospfd.service
+    ipvsadm -C
+}
+
+case $1 in
+start)
+    snat_start
+;;
+stop)
+    snat_stop
+;;
+restart)
+    snat_stop
+    snat_start
+;;
+status)
+    ipvsadm -ln
+;;
+*)
+    echo "[Usage] $0 start|stop|restart|status"
+;;
+esac

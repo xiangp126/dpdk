@@ -1,0 +1,14 @@
+[Unit]
+Description=DPVS snat service control
+After=syslog.target dpvs.service
+ConditionPathExists=/usr/bin/snat-manager
+
+[Service]
+Type=simple
+RemainAfterExit=true
+ExecStart=/usr/bin/snat-manager start
+ExecReload=/usr/bin/snat-manager restart
+ExecStop=/usr/bin/snat-manager stop
+
+[Install]
+WantedBy=multi-user.target

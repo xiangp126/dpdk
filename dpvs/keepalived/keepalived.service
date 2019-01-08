@@ -1,0 +1,19 @@
+[Unit]
+Description=DPVS and VRRP High Availability Monitor
+BindsTo=dpvs.service
+After=syslog.target network.target dpvs.service
+ConditionPathExists=/etc/keepalived/keepalived.conf
+
+[Service]
+Type=forking
+#PIDFile=/var/run/keepalived.pid
+EnvironmentFile=-/etc/sysconfig/keepalived
+ExecStartPre=/usr/bin/rm -f /var/run/keepalived.pid
+ExecStart=/usr/bin/keepalived $KEEPALIVED_OPTIONS
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStopPost=/usr/bin/sleep 1
+KillMode=process
+#LimitCore=infinity
+
+[Install]
+WantedBy=multi-user.target
